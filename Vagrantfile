@@ -2,16 +2,16 @@
 # vi: set ft=ruby :
 
 VAGRANTFILE_API_VERSION = "2"
-CASSANDRA_VERSION = "2.1.0"
+CASSANDRA_VERSION = "2.1.5"
 CHEF_VERSION = "11.16.0"
 
 BOX = "opscode_ubuntu-14.04_chef-provisionerless"
 BOX_URL = "http://opscode-vm-bento.s3.amazonaws.com/vagrant/virtualbox/opscode_ubuntu-14.04_chef-provisionerless.box"
 
-INSTANCES = 3
-MEMORY = 1024
+INSTANCES = 1
+MEMORY = 2048
 DOMAIN = "example.org"
-SUBNET = "192.168.200"
+SUBNET = "10.21.0"
 CLUSTER_NAME = "Test Cluster"
 
 SEEDS = []
@@ -26,7 +26,8 @@ INSTANCES.times do |i|
     'name' => name,
     'hostname' => hostname,
     'addr' => addr,
-    'token' => 256
+    'token' => 256,
+    'num' => i
   }
   SEEDS << addr
 end
@@ -34,6 +35,19 @@ end
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|  
   NODES.each do |n|
     config.vm.define n['name'] do |node|
+      if Vagrant.has_plugin?("vagrant-cachier")
+        config.cache.scope = :box
+      end
+
+      if n['num'] == 1
+        config.vm.network "forwarded_port", guest: 9042, host: 9142
+      end
+
+      config.hostmanager.enabled = false
+      config.hostmanager.manage_host = true
+      config.hostmanager.include_offline = true
+      config.hostmanager.ignore_private_ip = false
+
       node.vm.box = BOX
       node.vm.box_url = BOX_URL      
       node.omnibus.chef_version = CHEF_VERSION
@@ -43,6 +57,9 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         vb.name = "vagrant_cassandra_#{n['name']}"
         vb.customize ["modifyvm", :id, "--memory", MEMORY]
       end
+
+      node.vm.provision :hostmanager
+
       node.vm.provision :chef_solo do |chef|
         chef.custom_config_path = "Vagrantfile.chef"
         chef.cookbooks_path = ["chef/cookbooks", "chef/site-cookbooks"]
@@ -65,9 +82,11 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
             'seeds' => SEEDS,
             'listen_address' => n['addr'],
             'broadcast_address' => n['addr'],
+            'broadcast_rpc_address' => n['addr'],
             'rpc_address' => '0.0.0.0',
             'vnodes' => VNODES,
-            'cluster_name' => CLUSTER_NAME  
+            'cluster_name' => CLUSTER_NAME,
+            'jamm_version' => '0.3.0'  
           }  
         }        
       end
